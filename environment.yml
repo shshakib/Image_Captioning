@@ -1,0 +1,19 @@
+name: image_captioning
+channels:
+  - defaults
+  - conda-forge
+  - pytorch
+dependencies:
+  - python=3.9
+  - numpy
+  - pandas
+  - matplotlib
+  - spacy
+  - pillow
+  - pytorch
+  - torchvision
+  - torchtext
+  - cudatoolkit=11.8  #Compatibility
+  - pip
+  - pip:
+      - nltk
