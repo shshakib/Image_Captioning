@@ -1,1 +1,3 @@
 Data/
+src/__pycache__/vocab_builder.cpython-39.pyc
+.gitignore

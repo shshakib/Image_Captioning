@@ -17,3 +17,8 @@ dependencies:
   - pip
   - pip:
       - nltk
+
+    # Commands to run after environment setup
+    #pip install torchtext, if needed
+    #python -m spacy download en_core_web_lg
+
