@@ -88,4 +88,4 @@ class ImageCaptionDataset(Dataset):
 
         caption_token_ids = torch.tensor(caption_token_ids, dtype=torch.long)
         
-        return image, caption_token_ids
+        return image, caption_token_ids, caption
