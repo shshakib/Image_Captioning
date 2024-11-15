@@ -36,6 +36,9 @@ class DecoderRNN(nn.Module):
         # Captions shape [batch_size, longest_text_in_batch]
         # Embeddings shape [batch_size, longest_text_in_batch, embed_size] 
         # each word is represented using embedding of embed_size
+        features = features.to(self.device)
+        captions = captions.to(self.device)        
+        
         embeds = self.embedding(captions)
 
         # [batch_size, dec_hidden_size]        

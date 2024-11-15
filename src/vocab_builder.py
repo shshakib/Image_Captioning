@@ -36,6 +36,10 @@ class VocabularyBuilder:
         Returns:
             List[str]: List of lemmatized, lowercase tokens.
         """
+        if not isinstance(text, str):
+                print(f"Warning: Expected a string but got {type(text)}")
+                return []
+        
         doc = self.nlp(text)
         tokens = [token.lemma_.lower() for token in doc if not token.is_punct and not token.is_space]
         return tokens
@@ -53,6 +57,9 @@ class VocabularyBuilder:
         """
         counter = Counter()
         for line in text_lines:
+            if line is None or (isinstance(line, float) and torch.isnan(torch.tensor(line))):
+                continue
+
             counter.update(self.spacy_tokenizer(line))
         
         self.vocabulary = vocab(counter, min_freq=self.min_freq)

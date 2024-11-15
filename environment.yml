@@ -1,19 +1,21 @@
 name: image_captioning
 channels:
+  - nvidia
+  - pytorch
   - defaults
   - conda-forge
-  - pytorch
 dependencies:
   - python=3.9
-  - numpy
+  - numpy=1.24
   - pandas
   - matplotlib
   - spacy
   - pillow
-  - pytorch
-  - torchvision
-  - torchtext
-  - cudatoolkit=11.8  #Compatibility
+  - pytorch=2.1.1
+  - torchvision=0.16.1
+  - torchaudio=2.1.1
+  - pytorch-cuda=11.8
+  - torchtext=0.16.1
   - pip
   - pip:
       - nltk
@@ -21,4 +23,6 @@ dependencies:
     # Commands to run after environment setup
     #pip install torchtext, if needed
     #python -m spacy download en_core_web_lg
+    #pip install spacy==3.8.0 for compatibility with en_core_web_lg
+
 

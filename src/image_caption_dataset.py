@@ -23,6 +23,8 @@ class ImageCaptionDataset(Dataset):
         df = pd.read_csv(captions, sep='|')
         df.columns = df.columns.str.strip()
 
+        df = df.dropna(subset=['comment']) #Drop rows with NaN captions
+
         self.captions = df['comment'].tolist()
         self.image_names = df['image_name'].tolist()
 
@@ -44,6 +46,9 @@ class ImageCaptionDataset(Dataset):
         Returns:
             List[int]: List of token IDs for the caption.
         """
+        if not isinstance(caption, str):
+            raise ValueError("Expected a string for caption, got {}".format(type(caption)))
+        
         tokens = ['<sos>'] + self.vocabulary_builder.spacy_tokenizer(caption) + ['<eos>']
         
         token_ids = [self.vocabulary_builder.vocabulary[token] 
@@ -71,6 +76,14 @@ class ImageCaptionDataset(Dataset):
             image = self.transform(image)
 
         caption = self.captions[idx]
+
+        if caption is None:
+            raise ValueError("Caption is None for index {}".format(idx))
+
+        if not isinstance(caption, str):
+            print("Invalid caption at index {}: value = {}, type = {}".format(idx, caption, type(caption)))
+            raise ValueError("Caption is not a string for index {}".format(idx))
+        
         caption_token_ids = self.caption_to_token_ids(caption)
 
         caption_token_ids = torch.tensor(caption_token_ids, dtype=torch.long)
