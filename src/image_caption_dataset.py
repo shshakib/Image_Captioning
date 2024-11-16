@@ -23,7 +23,7 @@ class ImageCaptionDataset(Dataset):
         df = pd.read_csv(captions, sep='|')
         df.columns = df.columns.str.strip()
 
-        df = df.dropna(subset=['comment']) #Drop rows with NaN captions
+        df = df.dropna(subset=['comment'])
 
         self.captions = df['comment'].tolist()
         self.image_names = df['image_name'].tolist()

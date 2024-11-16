@@ -29,7 +29,7 @@ class BatchCaptionCollator:
                 - targets (torch.Tensor): Padded captions with shape [batch_size, max_caption_length].
         """
         imgs = [item[0].unsqueeze(0) for item in batch]
-        targets = [item[1] for item in batch]#Tokenized captions
+        targets = [item[1] for item in batch]
         raw_captions = [item[2] for item in batch]
 
         imgs = torch.cat(imgs, dim=0)

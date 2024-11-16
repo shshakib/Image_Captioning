@@ -35,25 +35,24 @@ class DecoderRNN(nn.Module):
         
         # Captions shape [batch_size, longest_text_in_batch]
         # Embeddings shape [batch_size, longest_text_in_batch, embed_size] 
-        # each word is represented using embedding of embed_size
         features = features.to(self.device)
         captions = captions.to(self.device)        
         
         embeds = self.embedding(captions)
 
-        # [batch_size, dec_hidden_size]        
+        #[batch_size, dec_hidden_size]        
         h, c = self.init_hidden_state(features) 
         
         seq_len = len(captions[0]) - 1 
         batch_size = captions.size(0)
 
-        # Features shape: [batch_size, 49, 2048]
+        #Features shape: [batch_size, 49, 2048]
         num_features = features.size(1)
         
-        # One-hot word predictions
+        #One-hot word predictions
         preds = torch.zeros(batch_size, seq_len, self.vocab_size, device=self.device)
 
-        # Initial attention weights for each time instance (each word)
+        #Ini attention weights(each word)
         attn_weights = torch.zeros(batch_size, seq_len, num_features, device=self.device)
                 
         for t in range(seq_len):
@@ -81,6 +80,8 @@ class DecoderRNN(nn.Module):
         attn_weights = []
         
         word = torch.tensor(vocab['<sos>']).view(1, -1).to(self.device)
+
+
         embeds = self.embedding(word)
 
         captions = []
