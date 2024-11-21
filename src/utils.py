@@ -6,9 +6,10 @@ import os
 import re
 from nltk.translate.bleu_score import corpus_bleu
 from pycocoevalcap.cider.cider import Cider
-#from pycocoevalcap.meteor.meteor import Meteor
 from nltk.translate.meteor_score import meteor_score
 import nltk
+import numpy as np
+from PIL import Image
 
 
 def denormalize_img(img_tensor, mean, std):
@@ -85,7 +86,6 @@ def load_model(model, optimizer, checkpoint_path, learning_rate=None, device='cp
     epoch = checkpoint['epoch']
     print(f"Loaded model from epoch {epoch}")
     
-    # Ensure optimizer uses the correct learning rate
     for param_group in optimizer.param_groups:
         param_group['lr'] = learning_rate
     
@@ -141,11 +141,13 @@ def calculate_loss(model, data_loader, criterion, vocab_size, device):
 
             outputs, _ = model(images, caption_token_ids)
             targets = caption_token_ids[:, 1:]
-            loss = criterion(outputs.view(-1, vocab_size), targets.reshape(-1))
+            loss = criterion(outputs.reshape(-1, model.decoder.vocab_size), targets.reshape(-1))
+
+
             
             total_loss += loss.item()
     
-    #Average loss over all batches
+    #Avg loss over all batches
     avg_loss = total_loss / len(data_loader)
     return avg_loss
 
@@ -245,3 +247,210 @@ class EarlyStopping:
         else:
             self.counter += 1
         return self.counter > self.patience
+    
+
+
+def train_model(model, train_loader, val_loader, test_loader, criterion, 
+    optimizer, scheduler, vocab, vocab_builder, num_epochs, print_every, 
+    early_stopping, save_dir, device, Transform_mean, Transform_std,
+    max_sentence_length, model_name="model"):
+
+    train_losses = []
+    val_losses = []
+    bleu_scores = []
+    cider_scores = []
+    meteor_scores = []
+
+    for epoch in range(1, num_epochs + 1):
+        model.train()
+        train_loss = 0
+
+        for idx, (images, caption_token_ids, raw_captions) in enumerate(train_loader):
+            images, caption_token_ids = images.to(device), caption_token_ids.to(device)
+
+            optimizer.zero_grad()
+
+            #Forward
+            outputs, _ = model(images, caption_token_ids)
+
+            targets = caption_token_ids[:, 1:]  #Shift captions by 1 token for targets
+
+            loss = criterion(outputs.reshape(-1, model.decoder.vocab_size), targets.reshape(-1))
+
+            loss.backward()
+            optimizer.step()
+
+            train_loss += loss.item()
+
+            #Print training loss every `print_every` batches
+            if (idx + 1) % print_every == 0:
+                print(f'Epoch: {epoch}, Batch: {idx+1}, Training Loss: {loss.item():.5f}')
+
+                #Visualize generated caption
+                model.eval()
+                with torch.no_grad():
+                    img, _, _ = next(iter(train_loader))
+                    features = model.encoder(img[0:1].to(device))
+
+                    if model.decoder_type == "lstm":
+                        caps, attn_weights = model.decoder.generate_caption(features, vocab=vocab)
+                    elif model.decoder_type == "transformer":
+                        caps, attn_weights = model.decoder.generate_caption(features, max_len=max_sentence_length, vocab=vocab)
+
+
+                    caption = ' '.join(caps)
+                    display_image(img[0], caption=caption, denormalize=True, mean=Transform_mean, std=Transform_std)
+
+                    #if len(attn_weights) == 0:
+                    #    print("Attention weights are empty!")
+                    #visualize_attention(img[0], caps, attn_weights, vocab, mean=Transform_mean, std=Transform_std, decoder_type=model.decoder_type)
+
+                model.train()
+
+        #Avg training loss
+        avg_train_loss = train_loss / len(train_loader)
+        train_losses.append(avg_train_loss)
+
+        #Validation
+        model.eval()
+        avg_val_loss = calculate_loss(model, val_loader, criterion, model.decoder.vocab_size, device)
+        val_losses.append(avg_val_loss)
+
+
+        #Metrics (BLEU, METEOR, CIDEr)
+        if model.decoder_type == "lstm":
+            avg_bleu_score = calculate_bleu_score(model, val_loader, vocab, vocab_builder, device)
+            avg_meteor_score = calculate_meteor_score(model, val_loader, vocab, vocab_builder, device)
+            avg_cider_score = calculate_cider_score(model, val_loader, vocab, vocab_builder, device)
+        elif model.decoder_type == "transformer" and train_loss<=3.7:
+            avg_bleu_score = calculate_bleu_score(model, val_loader, vocab, vocab_builder, device)
+            avg_meteor_score = calculate_meteor_score(model, val_loader, vocab, vocab_builder, device)
+            avg_cider_score = calculate_cider_score(model, val_loader, vocab, vocab_builder, device)
+        else:
+            avg_bleu_score = 0
+            avg_meteor_score = 0
+            avg_cider_score = 0
+
+
+        bleu_scores.append(avg_bleu_score)
+        meteor_scores.append(avg_meteor_score)
+        cider_scores.append(avg_cider_score)
+
+        print(
+            f"Epoch {epoch}/{num_epochs} - "
+            f"Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, "
+            f"BLEU: {avg_bleu_score:.4f}, CIDEr: {avg_cider_score:.4f}, METEOR: {avg_meteor_score:.4f}"
+        )
+
+        #Change learning rate
+        scheduler.step(avg_val_loss)
+
+        #Early stopping
+        if early_stopping(avg_val_loss):
+            print(f"Early stopping triggered after epoch {epoch}")
+            break
+
+        #Save model
+        model_save_path = os.path.join(save_dir, f"{model_name}_epoch_{epoch}.pth")
+        torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'train_loss': avg_train_loss,
+            'val_loss': avg_val_loss,
+            'bleu_score': avg_bleu_score,
+            'cider_score': avg_cider_score,
+            'meteor_score': avg_meteor_score
+        }, model_save_path)
+
+        print(f"Model saved at {model_save_path}")
+
+    #Final Test
+    print("Evaluating on the test set...")
+    final_test_loss = calculate_loss(model, test_loader, criterion, model.decoder.vocab_size, device)
+    final_test_bleu = calculate_bleu_score(model, test_loader, vocab, vocab_builder, device)
+    final_test_cider = calculate_cider_score(model, test_loader, vocab, vocab_builder, device)
+    final_test_meteor = calculate_meteor_score(model, test_loader, vocab, vocab_builder, device)
+
+    print(
+        f"Test Results - Loss: {final_test_loss:.4f}, BLEU: {final_test_bleu:.4f}, "
+        f"CIDEr: {final_test_cider:.4f}, METEOR: {final_test_meteor:.4f}"
+    )
+
+    #Plot
+    plot_metrics(train_losses, val_losses, bleu_scores, cider_scores, meteor_scores, save_dir)
+
+    return {
+        "train_losses": train_losses,
+        "val_losses": val_losses,
+        "bleu_scores": bleu_scores,
+        "cider_scores": cider_scores,
+        "meteor_scores": meteor_scores
+    }
+
+
+
+
+
+def visualize_attention(image, caption, attention_weights, vocab, mean, std, decoder_type):
+    """
+    Visualizes the attention map over the image with wrapping for long sentences.
+    """
+    if len(attention_weights) == 0:
+        print("No attention weights to visualize!")
+        return
+
+    stop_words = {'a', 'an', 'the', 'is', 'are', 'of', 'to', 'and', 'with', '<sos>', '<eos>', '<unk>'}
+    spatial_words = {'on', 'under', 'beside', 'inside', 'outside', 'next to', 'above', 'below'}
+    meaningful_caption = [
+        word for word in caption 
+        if word not in stop_words or word in spatial_words
+    ]
+    meaningful_attention_weights = attention_weights[:len(meaningful_caption)]
+
+    if len(meaningful_caption) == 0 or len(meaningful_attention_weights) == 0:
+        print("No meaningful words or attention weights left after filtering!")
+        print("Original caption:", caption)
+        print("Filtered caption:", meaningful_caption)
+        return
+
+
+    attention_map_size = int(np.sqrt(meaningful_attention_weights[0].shape[-1]))
+    if attention_map_size**2 != meaningful_attention_weights[0].shape[-1]:
+        raise ValueError(f"Attention map size ({meaningful_attention_weights[0].shape[-1]}) is not a perfect square!")
+
+    image = denormalize_img(image.clone(), mean, std)
+    image = transforms.ToPILImage()(image)
+
+    max_words_per_row = 8
+    num_words = len(meaningful_caption)
+    num_rows = int(np.ceil(num_words / max_words_per_row))
+
+    fig, axes = plt.subplots(num_rows, max_words_per_row, figsize=(15, 3 * num_rows))
+    axes = axes.flatten()
+
+    for idx, (word, attn_map) in enumerate(zip(meaningful_caption, meaningful_attention_weights)):
+        if decoder_type == 'transformer':
+            attn_map = attn_map.mean(axis=0)
+            attn_map = attn_map.reshape(attention_map_size, attention_map_size)
+        elif decoder_type == 'lstm':
+            attn_map = attn_map.reshape(attention_map_size, attention_map_size)
+
+        attn_map = np.array(Image.fromarray(attn_map).resize(image.size, Image.BICUBIC))
+        attn_map = attn_map / attn_map.max()
+
+        axes[idx].imshow(image)
+        axes[idx].imshow(attn_map, alpha=0.6, cmap='jet')
+        axes[idx].axis('off')
+        axes[idx].set_title(word, fontsize=10)
+
+    for ax in axes[num_words:]:
+        ax.axis('off')
+
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+

@@ -6,9 +6,10 @@ class DecoderRNN(nn.Module):
 
     def __init__(self, emb_size, vocab_size, attn_size, 
                        enc_hidden_size, dec_hidden_size, 
-                       drop_prob = 0.3, device='cpu'):
+                       drop_prob = 0.3, device='cpu', use_attention=True):
         super().__init__()
         
+        self.use_attention = use_attention
         self.vocab_size = vocab_size
         self.attn_size = attn_size
         self.dec_hidden_size = dec_hidden_size
@@ -29,12 +30,8 @@ class DecoderRNN(nn.Module):
         
     
     def forward(self, features, captions):
-
-        features = features.to(self.device)
-        captions = captions.to(self.device)
-        
-        # Captions shape [batch_size, longest_text_in_batch]
-        # Embeddings shape [batch_size, longest_text_in_batch, embed_size] 
+        #Captions shape [batch_size, longest_text_in_batch]
+        #Embeddings shape [batch_size, longest_text_in_batch, embed_size] 
         features = features.to(self.device)
         captions = captions.to(self.device)        
         
@@ -56,20 +53,23 @@ class DecoderRNN(nn.Module):
         attn_weights = torch.zeros(batch_size, seq_len, num_features, device=self.device)
                 
         for t in range(seq_len):
-            attn_weight, context = self.attn(features, h)
+            if self.use_attention:
+                attn_weight, context = self.attn(features, h)
+            else:
+                context = torch.mean(features, dim=1)
+                attn_weight = torch.zeros(batch_size, features.size(1), device=self.device)
 
-            lstm_input = torch.cat((embeds[:, t], context), dim = 1)
-
+            lstm_input = torch.cat((embeds[:, t], context), dim=1)
             h, c = self.lstm_cell(lstm_input, (h, c))
-                    
-            output = self.fcn(self.drop(h))
-            
-            preds[:, t] = output
-            attn_weights[:, t] = attn_weight 
-        
-        
+            preds[:, t] = self.fcn(self.drop(h))
+            if self.use_attention:
+                attn_weights[:, t] = attn_weight
+
         return preds, attn_weights
-    
+
+
+
+
     def generate_caption(self, features, max_len = 20, vocab = None):
         
         features = features.to(self.device)
@@ -77,38 +77,37 @@ class DecoderRNN(nn.Module):
         batch_size = features.size(0)
         h, c = self.init_hidden_state(features)  
         
-        attn_weights = []
-        
         word = torch.tensor(vocab['<sos>']).view(1, -1).to(self.device)
-
 
         embeds = self.embedding(word)
 
         captions = []
+        attn_weights = []
         
-        for i in range(max_len):
+        for _ in range(max_len):
+            if self.use_attention:
+                attn_weight, context = self.attn(features, h)
+                attn_weights.append(attn_weight.cpu().detach().numpy())
+            else:
+                context = torch.mean(features, dim=1)
 
-            attn_weight, context = self.attn(features, h)
-            attn_weights.append(attn_weight.cpu().detach().numpy())
-            
-            lstm_input = torch.cat((embeds[:, 0], context), dim = 1)
-
+            lstm_input = torch.cat((embeds[:, 0], context), dim=1)
             h, c = self.lstm_cell(lstm_input, (h, c))
-
+            
             output = self.fcn(self.drop(h))
             output = output.view(batch_size, -1)
-            
-            predicted_word_idx = output.argmax(dim = 1)
-            
+
+            predicted_word_idx = output.argmax(dim=1)
             captions.append(predicted_word_idx.item())
-            
+
             if vocab.get_itos()[predicted_word_idx.item()] == '<eos>':
                 break
-            
-            embeds = self.embedding(predicted_word_idx.unsqueeze(0)).to(self.device)
-        
-        return [vocab.get_itos()[idx] for idx in captions], attn_weights
-    
+            embeds = self.embedding(predicted_word_idx.unsqueeze(0))
+
+        return [vocab.get_itos()[idx] for idx in captions], (attn_weights if self.use_attention else None)
+
+
+
     
     def init_hidden_state(self, features):
         mean_features = torch.mean(features, dim = 1)

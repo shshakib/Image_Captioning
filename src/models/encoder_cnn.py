@@ -7,11 +7,12 @@ class EncoderCNN(nn.Module):
         super(EncoderCNN, self).__init__()
 
         resnet = models.resnet50(weights = models.ResNet50_Weights.DEFAULT)
+        self.feature_dim = 2048  #ResNet-50 final feature dimension
 
         for param in resnet.parameters():
             param.requires_grad_(False)
         
-        #Get the list of layers and exclude the last two layers(Adaptive Average Pooling and Fully Connected)
+        #Exclude the last two layers(Adaptive Average Pooling and Fully Connected)
         modules = list(resnet.children())[:-2]
         self.resnet = nn.Sequential(*modules)
         
@@ -20,6 +21,7 @@ class EncoderCNN(nn.Module):
         #Generates features with shape [batch_size, 2048, 7, 7], output of the last layer of resnet produces 7x7 feature maps
         #image_size / 32 = 224 / 32 = 7
         features = self.resnet(images)
+        print("Encoder output shape:", features.shape)
 
         batch, feature_maps, size_1, size_2 = features.size()
 
