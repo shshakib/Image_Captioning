@@ -22,6 +22,7 @@ dependencies:
 
     # Commands to run after environment setup
     #pip install torchtext, if needed
+    #pip install rouge-score
     #python -m spacy download en_core_web_lg
     #pip install spacy==3.8.0 for compatibility with en_core_web_lg
     #pip install git+https://github.com/salaniz/pycocoevalcap

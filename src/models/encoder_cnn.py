@@ -1,34 +1,60 @@
 import torch
 import torch.nn as nn
 import torchvision.models as models
+from torchvision.models import efficientnet_v2_s
+
 
 class EncoderCNN(nn.Module):
-    def __init__(self):
+    def __init__(self, embed_size, dec_hidden_size, backbone, transformation=None):
+
         super(EncoderCNN, self).__init__()
 
-        resnet = models.resnet50(weights = models.ResNet50_Weights.DEFAULT)
-        self.feature_dim = 2048  #ResNet-50 final feature dimension
+        self.embed_size = embed_size
+        self.dec_hidden_size = dec_hidden_size
+        self.backbone = backbone.lower()
+        self.transformation = transformation.lower() if transformation else None
 
-        for param in resnet.parameters():
-            param.requires_grad_(False)
+        #backbone model
+        if self.backbone == "resnet50":
+            resnet = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
+            self.feature_dim = 2048  #dimension of ResNet-50
+            
+            for param in resnet.parameters():
+                param.requires_grad_(False)
+
+            modules = list(resnet.children())[:-2]
+            self.base_model = nn.Sequential(*modules)
+
+        elif self.backbone == "efficientnet":
+            efficientnet = efficientnet_v2_s(weights="IMAGENET1K_V1")
+            self.feature_dim = 1280  #dimension of EfficientNet-V2-S
+
+            for param in efficientnet.parameters():
+                param.requires_grad_(False)
+
+            self.base_model = nn.Sequential(*list(efficientnet.children())[:-2])
+
+        else:
+            raise ValueError(f"Unsupported backbone: {self.backbone}")
+
+        #Transformation layer
+        if self.transformation == "conv2d":
+            self.feature_transform = nn.Conv2d(self.feature_dim, dec_hidden_size, kernel_size=1)
+        elif self.transformation is None:
+            self.feature_transform = None
+        else:
+            raise ValueError(f"Unsupported transformation type: {self.transformation}")
         
-        #Exclude the last two layers(Adaptive Average Pooling and Fully Connected)
-        modules = list(resnet.children())[:-2]
-        self.resnet = nn.Sequential(*modules)
-        
+
 
     def forward(self, images):
-        #Generates features with shape [batch_size, 2048, 7, 7], output of the last layer of resnet produces 7x7 feature maps
-        #image_size / 32 = 224 / 32 = 7
-        features = self.resnet(images)
-        print("Encoder output shape:", features.shape)
+        features = self.base_model(images)
+
+        if self.feature_transform is not None:
+            features = self.feature_transform(features)
 
         batch, feature_maps, size_1, size_2 = features.size()
-
-        #[batch_size, 2048, 7, 7] -> [batch_size, 7, 7, 2048]
         features = features.permute(0, 2, 3, 1)
-
-        #[batch_size, 7, 7, 2048] -> [batch_size, 49, 2048]
         features = features.view(batch, -1, feature_maps)
-       
-        return features 
+
+        return features

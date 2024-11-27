@@ -36,10 +36,6 @@ class Attention(nn.Module):
         # attn_weight shape [batch_size, 49]
         attn_weight = F.softmax(attn_scores, dim = 1) 
 
-        # context shape [batch_size, 248] -> 
-        #               [batch_size, 49] * [batch_size, 49, 2048]
-        # Context has same dimensions as the encoding output i.e. the
-        # encoding_hidden_size 
         context = torch.sum(attn_weight.unsqueeze(2) * features,  dim = 1)
-             
-        return attn_weight, context
+
+        return context, attn_weight

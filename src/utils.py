@@ -3,14 +3,20 @@ from matplotlib import pyplot as plt
 import torch
 from torchvision import transforms
 import os
-import re
 from nltk.translate.bleu_score import corpus_bleu
 from pycocoevalcap.cider.cider import Cider
 from nltk.translate.meteor_score import meteor_score
-import nltk
 import numpy as np
 from PIL import Image
+import math
+import os
+import gzip
+import torch
+from rouge_score import rouge_scorer
+import warnings
 
+
+###############################################################################
 
 def denormalize_img(img_tensor, mean, std):
     mean_broadcast = mean[:, None, None]
@@ -18,16 +24,10 @@ def denormalize_img(img_tensor, mean, std):
     img_tensor = img_tensor * std_broadcast + mean_broadcast
     return img_tensor
 
-
+###############################################################################
 
 def display_image(image, caption=None, denormalize=False, mean=torch.tensor([0.485, 0.456, 0.406]), std= torch.tensor([0.229, 0.224, 0.225])):
-    """
-    Displays an image with an optional caption.
 
-    Parameters:
-        image (PIL.Image or torch.Tensor): The image to display. If it's a tensor, it's converted to PIL format.
-        caption (str, optional): Caption to display along with the image.
-    """
     if isinstance(image, torch.Tensor):
         if denormalize:
             image = denormalize_img(image.clone(), mean, std)
@@ -40,43 +40,69 @@ def display_image(image, caption=None, denormalize=False, mean=torch.tensor([0.4
     plt.axis("off")
     plt.show()
 
+###############################################################################
 
-def plot_metrics(train_losses, val_losses, bleu_scores, cider_scores, meteor_scores, save_dir):
+# def plot_metrics(train_losses, val_losses, bleu_scores, cider_scores, meteor_scores, train_perplexities, val_perplexities, 
+#                  rouge1_scores, rouge2_scores, rougeL_scores, save_dir, model_name, transformer_type, backbone):
+
+def plot_metrics(train_losses, val_losses, bleu_scores, rouge1_scores, rouge2_scores, rougeL_scores, 
+                 save_dir, model_name, transformation_type, backbone):
+    
     epochs = range(1, len(train_losses) + 1)
     
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(20, 10))
 
-    #Training/validation losses
-    plt.subplot(1, 2, 1)
+    #Training/Validation Loss
+    plt.subplot(2, 2, 1)
     plt.plot(epochs, train_losses, 'bo-', label='Training Loss', linewidth=2, markersize=5)
     plt.plot(epochs, val_losses, 'ro-', label='Validation Loss', linewidth=2, markersize=5)
-    plt.title('Training and Validation Loss Over Epochs', fontsize=16, fontweight='bold')
+    plt.title('Training and Validation Loss', fontsize=16)
     plt.xlabel('Epoch', fontsize=14)
     plt.ylabel('Loss', fontsize=14)
     plt.legend(fontsize=12)
     plt.grid(True, linestyle='--', alpha=0.6)
 
-    #BLEU, CIDEr, and METEOR Scores
-    plt.subplot(1, 2, 2)
+    #BLEU, CIDEr, METEOR Scores
+    plt.subplot(2, 2, 2)
     plt.plot(epochs, bleu_scores, 'go-', label='BLEU Score', linewidth=2, markersize=5)
-    plt.plot(epochs, cider_scores, 'mo-', label='CIDEr Score', linewidth=2, markersize=5)
-    plt.plot(epochs, meteor_scores, 'co-', label='METEOR Score', linewidth=2, markersize=5)
-    plt.title('BLEU, CIDEr, and METEOR Scores Over Epochs', fontsize=16, fontweight='bold')
+    #plt.plot(epochs, cider_scores, 'mo-', label='CIDEr Score', linewidth=2, markersize=5)
+    #plt.plot(epochs, meteor_scores, 'co-', label='METEOR Score', linewidth=2, markersize=5)
+    plt.title('BLEU, CIDEr, and METEOR Scores', fontsize=16)
     plt.xlabel('Epoch', fontsize=14)
     plt.ylabel('Score', fontsize=14)
     plt.legend(fontsize=12)
     plt.grid(True, linestyle='--', alpha=0.6)
 
-    #Show and save plots
+    #Perplexity
+    # plt.subplot(2, 2, 3)
+    # plt.plot(epochs, train_perplexities, 'bo-', label='Training Perplexity', linewidth=2, markersize=5)
+    # plt.plot(epochs, val_perplexities, 'ro-', label='Validation Perplexity', linewidth=2, markersize=5)
+    # plt.title('Perplexity Over Epochs', fontsize=16)
+    # plt.xlabel('Epoch', fontsize=14)
+    # plt.ylabel('Perplexity', fontsize=14)
+    # plt.legend(fontsize=12)
+    # plt.grid(True, linestyle='--', alpha=0.6)
+
+    #ROUGE Scores
+    plt.subplot(2, 2, 4)
+    plt.plot(epochs, [score['fmeasure'] for score in rouge1_scores], 'ro-', label='ROUGE-1 F1', linewidth=2, markersize=5)
+    plt.plot(epochs, [score['fmeasure'] for score in rouge2_scores], 'bo-', label='ROUGE-2 F1', linewidth=2, markersize=5)
+    plt.plot(epochs, [score['fmeasure'] for score in rougeL_scores], 'go-', label='ROUGE-L F1', linewidth=2, markersize=5)
+    plt.title('ROUGE F1 Scores Over Epochs', fontsize=16)
+    plt.xlabel('Epoch', fontsize=14)
+    plt.ylabel('F1 Score', fontsize=14)
+    plt.legend(fontsize=12)
+    plt.grid(True, linestyle='--', alpha=0.6)
+
+    #Finalize Layout
     plt.tight_layout()
-    plt.savefig(os.path.join(save_dir, "training_metrics_plot.png"), dpi=300, bbox_inches='tight')
+    plot_file = os.path.join(save_dir, f"{model_name}_{backbone}_{transformation_type}_training_metrics_plot.png")
+    plt.savefig(plot_file, dpi=300, bbox_inches='tight')
     plt.show()
 
+###############################################################################
 
 def load_model(model, optimizer, checkpoint_path, learning_rate=None, device='cpu'):
-    """
-    Load a saved model from specified checkpoint.
-    """
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint not found at {checkpoint_path}")
     
@@ -91,44 +117,7 @@ def load_model(model, optimizer, checkpoint_path, learning_rate=None, device='cp
     
     return model, optimizer, epoch
 
-
-def calculate_bleu_score(model, data_loader, vocab, vocab_builder, device):
-    """
-    Calculate BLEU score
-
-    Parameters:
-        model: Trained model to evaluate.
-        data_loader: DataLoader for validation/test data.
-        vocab: Vocab for generating captions.
-        vocab_builder: An instance of VocabularyBuilder class to use the tokenizer.
-        device: Device (CPU or GPU).
-
-    Returns:
-        float: Corpus BLEU score.
-    """
-    model.eval()
-    references, hypotheses = [], []
-    
-    with torch.no_grad():
-        for val_images, val_caption_token_ids, val_raw_captions in data_loader:
-            val_images = val_images.to(device)
-
-            for i in range(val_images.size(0)):
-                features = model.encoder(val_images[i:i+1])
-                generated_caption, _ = model.decoder.generate_caption(features, vocab=vocab)
-
-                tokenized_hypothesis = [
-                    word.lower() for word in generated_caption if word not in ["<unk>", "<eos>"]
-                ]
-
-                tokenized_reference = vocab_builder.spacy_tokenizer(val_raw_captions[i])
-
-                hypotheses.append(tokenized_hypothesis)
-                references.append([tokenized_reference])
-
-    bleu_score = corpus_bleu(references, hypotheses)
-    return bleu_score
-
+###############################################################################
 
 def calculate_loss(model, data_loader, criterion, vocab_size, device):
     model.eval()
@@ -142,99 +131,102 @@ def calculate_loss(model, data_loader, criterion, vocab_size, device):
             outputs, _ = model(images, caption_token_ids)
             targets = caption_token_ids[:, 1:]
             loss = criterion(outputs.reshape(-1, model.decoder.vocab_size), targets.reshape(-1))
-
-
             
             total_loss += loss.item()
     
-    #Avg loss over all batches
     avg_loss = total_loss / len(data_loader)
     return avg_loss
 
+###############################################################################
+
+def calculate_bleu_score(raw_captions, generated_captions):
+    #PAD_TOKEN = "<pad>"
+    #references = [[list(filter(lambda word: word != PAD_TOKEN, ref))] for ref in raw_captions]
+    #hypotheses = [list(filter(lambda word: word != PAD_TOKEN, hyp)) for hyp in generated_captions]
+
+    references = [[ref] for ref in raw_captions]
+    hypotheses = [hyp for hyp in generated_captions]
+
+    warnings.filterwarnings("ignore", category=UserWarning)
+
+    try:
+        bleu_score = corpus_bleu(references, hypotheses)
+    except ZeroDivisionError:
+        bleu_score = 0.0
+
+    return bleu_score
+
+###############################################################################
+
+def calculate_rouge(references, candidates):
+    from rouge_score import rouge_scorer
+
+    #PAD_TOKEN = "<pad>"
+    scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
+    scores = {'rouge1': [], 'rouge2': [], 'rougeL': []}
+
+    for ref, cand in zip(references, candidates):
+    #     if isinstance(ref, list):
+    #         ref = ' '.join(filter(lambda word: word != PAD_TOKEN, ref))
+    #     if isinstance(cand, list):
+    #         cand = ' '.join(filter(lambda word: word != PAD_TOKEN, cand))
+
+        if isinstance(ref, list):
+            ref = ' '.join(ref)
+        if isinstance(cand, list):
+            cand = ' '.join(cand)
 
 
-def calculate_cider_score(model, data_loader, vocab, vocab_builder, device):
-    """
-    Calculate CIDEr score using pycocoevalcap.
+        score = scorer.score(ref, cand)
+        scores['rouge1'].append(score['rouge1'])
+        scores['rouge2'].append(score['rouge2'])
+        scores['rougeL'].append(score['rougeL'])
 
-    Parameters:
-        model: Trained model to evaluate.
-        data_loader: DataLoader providing validation/test data.
-        vocab: Vocab used for generating captions.
-        vocab_builder: Instance of VocabularyBuilder class to use the tokenizer.
-        device: Device (CPU or GPU).
+    avg_scores = {
+        'rouge1': {
+            'precision': sum(d.precision for d in scores['rouge1']) / len(scores['rouge1']),
+            'recall': sum(d.recall for d in scores['rouge1']) / len(scores['rouge1']),
+            'fmeasure': sum(d.fmeasure for d in scores['rouge1']) / len(scores['rouge1']),
+        },
+        'rouge2': {
+            'precision': sum(d.precision for d in scores['rouge2']) / len(scores['rouge2']),
+            'recall': sum(d.recall for d in scores['rouge2']) / len(scores['rouge2']),
+            'fmeasure': sum(d.fmeasure for d in scores['rouge2']) / len(scores['rouge2']),
+        },
+        'rougeL': {
+            'precision': sum(d.precision for d in scores['rougeL']) / len(scores['rougeL']),
+            'recall': sum(d.recall for d in scores['rougeL']) / len(scores['rougeL']),
+            'fmeasure': sum(d.fmeasure for d in scores['rougeL']) / len(scores['rougeL']),
+        }
+    }
 
-    Returns:
-        float: Average CIDEr score for the dataset.
-    """
-    model.eval()
-    references_dict, hypotheses_dict = {}, {}
-    
-    with torch.no_grad():
-        for idx, (val_images, val_caption_token_ids, val_raw_captions) in enumerate(data_loader):
-            val_images = val_images.to(device)
+    return avg_scores
 
-            for i in range(val_images.size(0)):
 
-                features = model.encoder(val_images[i:i+1])
-                generated_caption, _ = model.decoder.generate_caption(features, vocab=vocab)
 
-                cleaned_caption = [word for word in generated_caption if word not in ["<unk>", "<eos>"]]
 
-                image_id = idx * val_images.size(0) + i
-                hypotheses_dict[image_id] = [' '.join(cleaned_caption)]
+###############################################################################
 
-                references_dict[image_id] = [' '.join(vocab_builder.spacy_tokenizer(val_raw_captions[i]))]
+def calculate_cider_score(raw_captions, generated_captions):
+    references_dict = {idx: [' '.join(ref)] for idx, ref in enumerate(raw_captions)}
+    hypotheses_dict = {idx: [' '.join(hyp)] for idx, hyp in enumerate(generated_captions)}
 
     cider_scorer = Cider()
     avg_cider_score, _ = cider_scorer.compute_score(references_dict, hypotheses_dict)
     return avg_cider_score
 
+###############################################################################
 
-
-def calculate_meteor_score(model, data_loader, vocab, vocab_builder, device):
-    """
-    Calculate METEOR score.
-
-    Parameters:
-        model: Trained model
-        data_loader: DataLoader for test/validation data.
-        vocab: Vocab for generating captions.
-        vocab_builder: Instance of VocabularyBuilder class to use for tokenizer.
-        device: Device (CPU or GPU).
-
-    Returns:
-        float: Average METEOR score.
-    """
-    model.eval()
-    references, hypotheses = [], []
-    
-    with torch.no_grad():
-        for val_images, val_caption_token_ids, val_raw_captions in data_loader:
-            val_images = val_images.to(device)
-
-            for i in range(val_images.size(0)):
-                features = model.encoder(val_images[i:i+1])
-                generated_caption, _ = model.decoder.generate_caption(features, vocab=vocab)
-
-                tokenized_hypothesis = [word for word in generated_caption if word not in ["<unk>", "<eos>"]]#remove eos and unk
-                tokenized_reference = vocab_builder.spacy_tokenizer(val_raw_captions[i])
-                references.append(tokenized_reference)
-                hypotheses.append(tokenized_hypothesis)
-
+def calculate_meteor_score(raw_captions, generated_captions):
     meteor_scores = [
-        meteor_score([ref], hyp) for ref, hyp in zip(references, hypotheses)
+        meteor_score([ref], hyp) for ref, hyp in zip(raw_captions, generated_captions)
     ]
-    avg_meteor_score = sum(meteor_scores) / len(meteor_scores)
-    return avg_meteor_score
+    return sum(meteor_scores) / len(meteor_scores)
 
-
+###############################################################################
 
 class EarlyStopping:
     def __init__(self, patience=5, min_delta=0):
-        """
-        Early stopping to stop training when validation loss doesn't improve.
-        """
         self.patience = patience
         self.min_delta = min_delta
         self.best_loss = float('inf')
@@ -248,18 +240,89 @@ class EarlyStopping:
             self.counter += 1
         return self.counter > self.patience
     
+###############################################################################
 
+def save_checkpoint(model, optimizer, epoch, train_loss, val_loss, bleu_score,
+                    cider_score, meteor_score, save_dir, model_name, encoder_backbone, transformation_type):
+    os.makedirs(save_dir, exist_ok=True)
+
+    model_file_name = f"{model_name}_{encoder_backbone}_{transformation_type}"
+    model_save_path = os.path.join(save_dir, f"{model_file_name}_epoch_{epoch}.pth.gz")
+
+    # if epoch > 1:
+    #     prev_checkpoint = os.path.join(save_dir, f"{model_file_name}_epoch_{epoch - 1}.pth.gz")
+    #     if os.path.exists(prev_checkpoint):
+    #         try:
+    #             os.remove(prev_checkpoint)
+    #             print(f"Removed previous checkpoint: {prev_checkpoint}")
+    #         except Exception as e:
+    #             print(f"Failed to remove previous checkpoint {prev_checkpoint}: {e}")
+
+    checkpoint = {
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'train_loss': train_loss,
+        'val_loss': val_loss,
+        'bleu_score': bleu_score,
+        'cider_score': cider_score,
+        'meteor_score': meteor_score,
+        #'train_perplexity': train_perplexity,
+        #'val_perplexity': val_perplexity,
+        'encoder_backbone': encoder_backbone,
+        'transformation_type': transformation_type
+    }
+
+    try:
+        with gzip.open(model_save_path, 'wb') as f:
+            torch.save(checkpoint, f)
+        print(f"Saved checkpoint for epoch {epoch} at {model_save_path}")
+    except Exception as e:
+        print(f"Failed to save checkpoint at {model_save_path}: {e}")
+
+
+
+###############################################################################
+
+def collect_captions(model, data_loader, vocab, vocab_builder, device):
+    model.eval()
+    raw_captions = []
+    generated_captions = []
+    PAD_TOKEN = vocab_builder.PAD_TOKEN
+
+    with torch.no_grad():
+        for val_images, val_caption_token_ids, val_raw_captions in data_loader:
+            val_images = val_images.to(device)
+
+            for i in range(val_images.size(0)):
+                features = model.encoder(val_images[i:i+1])
+                generated_caption, _ = model.decoder.generate_caption(features, vocab=vocab)
+
+                cleaned_caption = [word for word in generated_caption if word not in ["<unk>", "<eos>", PAD_TOKEN]]
+                tokenized_reference = [token for token in vocab_builder.spacy_tokenizer(val_raw_captions[i]) if token != PAD_TOKEN]
+                
+                generated_captions.append(cleaned_caption)
+                raw_captions.append(tokenized_reference)
+
+    return raw_captions, generated_captions
+
+###############################################################################
 
 def train_model(model, train_loader, val_loader, test_loader, criterion, 
     optimizer, scheduler, vocab, vocab_builder, num_epochs, print_every, 
     early_stopping, save_dir, device, Transform_mean, Transform_std,
-    max_sentence_length, model_name="model"):
+    max_sentence_length, model_name, encoder_backbone, transformation_type):
 
     train_losses = []
     val_losses = []
     bleu_scores = []
     cider_scores = []
     meteor_scores = []
+
+    rouge1_scores = []
+    rouge2_scores = []
+    rougeL_scores = []
+
 
     for epoch in range(1, num_epochs + 1):
         model.train()
@@ -301,8 +364,6 @@ def train_model(model, train_loader, val_loader, test_loader, criterion,
                     caption = ' '.join(caps)
                     display_image(img[0], caption=caption, denormalize=True, mean=Transform_mean, std=Transform_std)
 
-                    #if len(attn_weights) == 0:
-                    #    print("Attention weights are empty!")
                     #visualize_attention(img[0], caps, attn_weights, vocab, mean=Transform_mean, std=Transform_std, decoder_type=model.decoder_type)
 
                 model.train()
@@ -316,31 +377,55 @@ def train_model(model, train_loader, val_loader, test_loader, criterion,
         avg_val_loss = calculate_loss(model, val_loader, criterion, model.decoder.vocab_size, device)
         val_losses.append(avg_val_loss)
 
-
+        
         #Metrics (BLEU, METEOR, CIDEr)
+        raw_captions, generated_captions = collect_captions(model, val_loader, vocab, vocab_builder, device)
+
         if model.decoder_type == "lstm":
-            avg_bleu_score = calculate_bleu_score(model, val_loader, vocab, vocab_builder, device)
-            avg_meteor_score = calculate_meteor_score(model, val_loader, vocab, vocab_builder, device)
-            avg_cider_score = calculate_cider_score(model, val_loader, vocab, vocab_builder, device)
-        elif model.decoder_type == "transformer" and train_loss<=3.7:
-            avg_bleu_score = calculate_bleu_score(model, val_loader, vocab, vocab_builder, device)
-            avg_meteor_score = calculate_meteor_score(model, val_loader, vocab, vocab_builder, device)
-            avg_cider_score = calculate_cider_score(model, val_loader, vocab, vocab_builder, device)
+            avg_bleu_score = calculate_bleu_score(raw_captions, generated_captions)
+            #avg_meteor_score = calculate_meteor_score(raw_captions, generated_captions)
+            #avg_cider_score = calculate_cider_score(raw_captions, generated_captions)
+            rouge_scores = calculate_rouge(raw_captions, generated_captions)
+
+        elif model.decoder_type == "transformer":
+            avg_bleu_score = calculate_bleu_score(raw_captions, generated_captions)
+            #avg_meteor_score = calculate_meteor_score(raw_captions, generated_captions)
+            #avg_cider_score = calculate_cider_score(raw_captions, generated_captions)
+            rouge_scores = calculate_rouge(raw_captions, generated_captions)
+
         else:
             avg_bleu_score = 0
-            avg_meteor_score = 0
-            avg_cider_score = 0
+            #avg_meteor_score = 0
+            #avg_cider_score = 0
+            rouge_scores['rouge1'] = 0
+            rouge_scores['rouge2'] = 0
+            rouge_scores['rougeL'] = 0
 
 
         bleu_scores.append(avg_bleu_score)
-        meteor_scores.append(avg_meteor_score)
-        cider_scores.append(avg_cider_score)
+        #meteor_scores.append(avg_meteor_score)
+        #cider_scores.append(avg_cider_score)
+        rouge1_scores.append(rouge_scores['rouge1'])
+        rouge2_scores.append(rouge_scores['rouge2'])
+        rougeL_scores.append(rouge_scores['rougeL'])
 
         print(
             f"Epoch {epoch}/{num_epochs} - "
             f"Train Loss: {avg_train_loss:.4f}, Val Loss: {avg_val_loss:.4f}, "
-            f"BLEU: {avg_bleu_score:.4f}, CIDEr: {avg_cider_score:.4f}, METEOR: {avg_meteor_score:.4f}"
+            f"BLEU: {avg_bleu_score:.4f}, "
+            #f"Train Perplexity: {train_perplexity:.2f}, Val Perplexity: {val_perplexity:.2f}, "
+            f"ROUGE-1 Precision: {rouge_scores['rouge1']['precision']:.4f}, "
+            f"ROUGE-1 Recall: {rouge_scores['rouge1']['recall']:.4f}, "
+            f"ROUGE-1 F1: {rouge_scores['rouge1']['fmeasure']:.4f}, "
+            f"ROUGE-2 Precision: {rouge_scores['rouge2']['precision']:.4f}, "
+            f"ROUGE-2 Recall: {rouge_scores['rouge2']['recall']:.4f}, "
+            f"ROUGE-2 F1: {rouge_scores['rouge2']['fmeasure']:.4f}, "
+            f"ROUGE-L Precision: {rouge_scores['rougeL']['precision']:.4f}, "
+            f"ROUGE-L Recall: {rouge_scores['rougeL']['recall']:.4f}, "
+            f"ROUGE-L F1: {rouge_scores['rougeL']['fmeasure']:.4f}"
         )
+        
+
 
         #Change learning rate
         scheduler.step(avg_val_loss)
@@ -351,92 +436,96 @@ def train_model(model, train_loader, val_loader, test_loader, criterion,
             break
 
         #Save model
-        model_save_path = os.path.join(save_dir, f"{model_name}_epoch_{epoch}.pth")
-        torch.save({
-            'epoch': epoch,
-            'model_state_dict': model.state_dict(),
-            'optimizer_state_dict': optimizer.state_dict(),
-            'train_loss': avg_train_loss,
-            'val_loss': avg_val_loss,
-            'bleu_score': avg_bleu_score,
-            'cider_score': avg_cider_score,
-            'meteor_score': avg_meteor_score
-        }, model_save_path)
+        save_checkpoint(
+            model=model,
+            optimizer=optimizer,
+            epoch=epoch,
+            train_loss=avg_train_loss,
+            val_loss=avg_val_loss,
+            bleu_score=avg_bleu_score,
+            #cider_score=avg_cider_score,
+            #meteor_score=avg_meteor_score,
+            cider_score=0,
+            meteor_score=0,
+            #train_perplexity=train_perplexity,
+            #val_perplexity=val_perplexity,
+            save_dir=save_dir,
+            model_name=model_name,
+            encoder_backbone=encoder_backbone,
+            transformation_type=transformation_type
+        )
 
-        print(f"Model saved at {model_save_path}")
 
     #Final Test
     print("Evaluating on the test set...")
     final_test_loss = calculate_loss(model, test_loader, criterion, model.decoder.vocab_size, device)
-    final_test_bleu = calculate_bleu_score(model, test_loader, vocab, vocab_builder, device)
-    final_test_cider = calculate_cider_score(model, test_loader, vocab, vocab_builder, device)
-    final_test_meteor = calculate_meteor_score(model, test_loader, vocab, vocab_builder, device)
+    
+    raw_captions, generated_captions = collect_captions(model, test_loader, vocab, vocab_builder, device)
+    final_test_bleu = calculate_bleu_score(raw_captions, generated_captions)
+    #final_test_cider = calculate_cider_score(raw_captions, generated_captions)
+    #final_test_meteor = calculate_meteor_score(raw_captions, generated_captions)
+    final_test_rouge = calculate_rouge(raw_captions, generated_captions)
+
+    #final_test_perplexity = calculate_perplexity(model, test_loader, criterion, model.decoder.vocab_size, device)
+
 
     print(
         f"Test Results - Loss: {final_test_loss:.4f}, BLEU: {final_test_bleu:.4f}, "
-        f"CIDEr: {final_test_cider:.4f}, METEOR: {final_test_meteor:.4f}"
+        #f"CIDEr: {final_test_cider:.4f}, METEOR: {final_test_meteor:.4f}, "
+        f"ROUGE-1 F1: {final_test_rouge['rouge1']['fmeasure']:.4f}, "
+        f"ROUGE-2 F1: {final_test_rouge['rouge2']['fmeasure']:.4f}, "
+        f"ROUGE-L F1: {final_test_rouge['rougeL']['fmeasure']:.4f}, "
+        #f"Perplexity: {final_test_perplexity:.2f}"
     )
 
+
     #Plot
-    plot_metrics(train_losses, val_losses, bleu_scores, cider_scores, meteor_scores, save_dir)
-
-    return {
-        "train_losses": train_losses,
-        "val_losses": val_losses,
-        "bleu_scores": bleu_scores,
-        "cider_scores": cider_scores,
-        "meteor_scores": meteor_scores
-    }
-
-
-
-
-
-def visualize_attention(image, caption, attention_weights, vocab, mean, std, decoder_type):
-    """
-    Visualizes the attention map over the image with wrapping for long sentences.
-    """
-    if len(attention_weights) == 0:
-        print("No attention weights to visualize!")
-        return
-
-    stop_words = {'a', 'an', 'the', 'is', 'are', 'of', 'to', 'and', 'with', '<sos>', '<eos>', '<unk>'}
-    spatial_words = {'on', 'under', 'beside', 'inside', 'outside', 'next to', 'above', 'below'}
-    meaningful_caption = [
-        word for word in caption 
-        if word not in stop_words or word in spatial_words
-    ]
-    meaningful_attention_weights = attention_weights[:len(meaningful_caption)]
-
-    if len(meaningful_caption) == 0 or len(meaningful_attention_weights) == 0:
-        print("No meaningful words or attention weights left after filtering!")
-        print("Original caption:", caption)
-        print("Filtered caption:", meaningful_caption)
-        return
+    plot_metrics(
+        train_losses=train_losses,
+        val_losses=val_losses,
+        bleu_scores=bleu_scores,
+        #cider_scores=cider_scores,
+        #meteor_scores=meteor_scores,
+        #train_perplexities=train_perplexities,
+        #val_perplexities=val_perplexities,
+        rouge1_scores=rouge1_scores,
+        rouge2_scores=rouge2_scores,
+        rougeL_scores=rougeL_scores,
+        save_dir=save_dir,
+        model_name=model_name,
+        transformation_type=transformation_type,
+        backbone=encoder_backbone
+    )
 
 
-    attention_map_size = int(np.sqrt(meaningful_attention_weights[0].shape[-1]))
-    if attention_map_size**2 != meaningful_attention_weights[0].shape[-1]:
-        raise ValueError(f"Attention map size ({meaningful_attention_weights[0].shape[-1]}) is not a perfect square!")
 
-    image = denormalize_img(image.clone(), mean, std)
+    return None
+
+###############################################################################
+
+def visualize_attention(image, caption, attention_weights, vocab, mean, std, decoder_type, denormalize=True):
+
+    attention_map_size = int(np.sqrt(attention_weights[0].shape[-1]))
+
+    if denormalize:
+        image = denormalize_img(image.clone(), mean, std)
     image = transforms.ToPILImage()(image)
 
     max_words_per_row = 8
-    num_words = len(meaningful_caption)
+    num_words = len(caption)
     num_rows = int(np.ceil(num_words / max_words_per_row))
 
     fig, axes = plt.subplots(num_rows, max_words_per_row, figsize=(15, 3 * num_rows))
     axes = axes.flatten()
 
-    for idx, (word, attn_map) in enumerate(zip(meaningful_caption, meaningful_attention_weights)):
+    for idx, (word, attn_map) in enumerate(zip(caption, attention_weights)):
         if decoder_type == 'transformer':
             attn_map = attn_map.mean(axis=0)
             attn_map = attn_map.reshape(attention_map_size, attention_map_size)
         elif decoder_type == 'lstm':
             attn_map = attn_map.reshape(attention_map_size, attention_map_size)
 
-        attn_map = np.array(Image.fromarray(attn_map).resize(image.size, Image.BICUBIC))
+        #Normalize attention map
         attn_map = attn_map / attn_map.max()
 
         axes[idx].imshow(image)
