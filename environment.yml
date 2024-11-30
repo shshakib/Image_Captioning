@@ -27,6 +27,8 @@ dependencies:
     #pip install spacy==3.8.0 for compatibility with en_core_web_lg
     #pip install git+https://github.com/salaniz/pycocoevalcap
     #Jave for Meteor score: https://www.java.com/en/download/
+    #pip install transformers
+
 
 
 

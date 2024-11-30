@@ -3,7 +3,7 @@ from torch.nn.utils.rnn import pad_sequence
 
 class BatchCaptionCollator:
 
-    def __init__(self, pad_idx, max_len=None, batch_first=False):
+    def __init__(self, pad_idx, max_len=80, batch_first=False):
 
         self.pad_idx = pad_idx
         self.max_len = max_len

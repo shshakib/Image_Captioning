@@ -18,3 +18,9 @@ saved_model/model_epoch_14.pth
 saved_model/model_epoch_15.pth
 .vscode/launch.json
 .vscode/settings.json
+src/models/DecoderGPT2.py
+src/models/encoderdecoder_vit_gpt2.py
+src/models/EncoderViT.py
+src/ImageCaptionDatasetGPT2.py
+src/utils_ViT_gpt2.py
+src/vocab_builder_gpt.py

@@ -8,7 +8,7 @@ class EncoderDecoder(nn.Module):
     def __init__(self, emb_size, vocab_size, attn_size, 
                  enc_hidden_size, dec_hidden_size, drop_prob=0.3, 
                  device='cpu', decoder_type='lstm', backbone="resnet50", transformation=None,
-                 num_heads=8, num_layers=6, ff_dim=2048, max_len=50, use_attention=True):
+                 num_heads=8, num_layers=6, ff_dim=2048, max_len=80, use_attention=True):
         super().__init__()
         self.device = device
         self.decoder_type = decoder_type

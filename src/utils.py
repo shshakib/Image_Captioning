@@ -106,7 +106,10 @@ def load_model(model, optimizer, checkpoint_path, learning_rate=None, device='cp
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint not found at {checkpoint_path}")
     
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    # Open the compressed checkpoint file
+    with gzip.open(checkpoint_path, 'rb') as f:
+        checkpoint = torch.load(f, map_location=device)
+    
     model.load_state_dict(checkpoint['model_state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
     epoch = checkpoint['epoch']
@@ -503,13 +506,18 @@ def train_model(model, train_loader, val_loader, test_loader, criterion,
 
 ###############################################################################
 
-def visualize_attention(image, caption, attention_weights, vocab, mean, std, decoder_type, denormalize=True):
+def visualize_attention(image, caption, attention_weights, mean, std, decoder_type, denormalize=True):
+    import matplotlib.pyplot as plt
+    from torchvision.transforms import ToPILImage
+    import numpy as np
+    import torch
+    from PIL import Image
 
     attention_map_size = int(np.sqrt(attention_weights[0].shape[-1]))
 
     if denormalize:
         image = denormalize_img(image.clone(), mean, std)
-    image = transforms.ToPILImage()(image)
+    original_image = ToPILImage()(image)
 
     max_words_per_row = 8
     num_words = len(caption)
@@ -525,19 +533,59 @@ def visualize_attention(image, caption, attention_weights, vocab, mean, std, dec
         elif decoder_type == 'lstm':
             attn_map = attn_map.reshape(attention_map_size, attention_map_size)
 
-        #Normalize attention map
-        attn_map = attn_map / attn_map.max()
+        # Resize attention map to match the image size
+        attn_map_resized = np.array(
+            ToPILImage()(torch.tensor(attn_map)).resize(original_image.size, resample=Image.BILINEAR)
+        )
 
-        axes[idx].imshow(image)
-        axes[idx].imshow(attn_map, alpha=0.6, cmap='jet')
-        axes[idx].axis('off')
+        # Compute percentiles to categorize attention values
+        low_threshold = np.percentile(attn_map_resized, 15)  # 25th percentile (low attention)
+        medium_threshold = np.percentile(attn_map_resized, 30)  # 50th percentile (median attention)
+        high_threshold = np.percentile(attn_map_resized, 50)  # 75th percentile (high attention)
+
+        # Categorize attention weights into levels: None, Low, Medium, High
+        attention_levels = np.zeros_like(attn_map_resized, dtype=int)
+        attention_levels[attn_map_resized > low_threshold] = 1  # Low
+        attention_levels[attn_map_resized > medium_threshold] = 2  # Medium
+        attention_levels[attn_map_resized > high_threshold] = 3  # High
+
+
+        # Create overlay colors for each level
+        overlay = np.array(original_image).astype(float)
+
+        # Apply different colors based on the attention level
+        # Apply different colors based on the attention level
+        overlay[attention_levels == 0] *= 1  # None: No change
+
+        # Adjust red intensities for darker red tones
+        overlay[attention_levels == 1, 0] += 50  # Low: Light red
+        overlay[attention_levels == 1, 1] += 10  # Add small green for darkness
+        overlay[attention_levels == 1, 2] += 10  # Add small blue for darkness
+
+        overlay[attention_levels == 2, 0] += 100  # Medium: Darker red
+        overlay[attention_levels == 2, 1] += 20  # Add more green
+        overlay[attention_levels == 2, 2] += 20  # Add more blue
+
+        overlay[attention_levels == 3, 0] += 250  # High: Rich dark red
+        overlay[attention_levels == 3, 1] += 10  # Add green
+        overlay[attention_levels == 3, 2] += 30  # Add blue
+
+
+        # Clip the overlay to valid range
+        overlay = np.clip(overlay, 0, 255).astype(np.uint8)
+
+        axes[idx].imshow(overlay)
+        axes[idx].axis("off")
         axes[idx].set_title(word, fontsize=10)
 
+    # Turn off unused axes
     for ax in axes[num_words:]:
         ax.axis('off')
 
     plt.tight_layout()
     plt.show()
+
+
 
 
 

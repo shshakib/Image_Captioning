@@ -33,7 +33,6 @@ class DecoderRNN(nn.Module):
     
     def forward(self, features, captions):
 
-
         embeddings = self.embedding(captions)  #[batch_size, max_caption_length, emb_size]
         
         h = self.init_h_layer(torch.mean(features, dim = 1))
@@ -67,7 +66,7 @@ class DecoderRNN(nn.Module):
 
 
 
-    def generate_caption(self, features, max_len=20, vocab=None):
+    def generate_caption(self, features, max_len=80, vocab=None):
 
         batch_size = features.size(0)
 
