@@ -11,12 +11,15 @@ class ImageCaptionDataset(Dataset):
         self.image_path_dict = {os.path.basename(path): path for path in image_paths}
         self.vocabulary_builder = vocabulary_builder
         self.transform = transform
+
         
         df = pd.read_csv(captions, sep='|')
         df.columns = df.columns.str.strip()
 
         df = df.dropna(subset=['comment'])
 
+        df = df.groupby('image_name').first().reset_index()
+        #print(df.head(5))
         self.captions = df['comment'].tolist()
         self.image_names = df['image_name'].tolist()
 

@@ -14,7 +14,6 @@ class EncoderCNN(nn.Module):
         self.backbone = backbone.lower()
         self.transformation = transformation.lower() if transformation else None
 
-        #backbone model
         if self.backbone == "resnet50":
             resnet = models.resnet50(weights=models.ResNet50_Weights.DEFAULT)
             self.feature_dim = 2048  #dimension of ResNet-50
@@ -37,7 +36,6 @@ class EncoderCNN(nn.Module):
         else:
             raise ValueError(f"Unsupported backbone: {self.backbone}")
 
-        #Transformation layer
         if self.transformation == "conv2d":
             self.feature_transform = nn.Conv2d(self.feature_dim, dec_hidden_size, kernel_size=1)
         elif self.transformation is None:

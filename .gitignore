@@ -24,3 +24,14 @@ src/models/EncoderViT.py
 src/ImageCaptionDatasetGPT2.py
 src/utils_ViT_gpt2.py
 src/vocab_builder_gpt.py
+src/models/__pycache__/attention.cpython-39.pyc
+src/models/__pycache__/DecoderGPT2.cpython-39.pyc
+src/models/__pycache__/DecoderRNN.cpython-39.pyc
+src/models/__pycache__/encoder_cnn.cpython-39.pyc
+src/models/__pycache__/encoderdecoder_vit_gpt2.cpython-39.pyc
+src/models/__pycache__/encoderdecoder.cpython-39.pyc
+src/models/__pycache__/EncoderViT.cpython-39.pyc
+src/models/__pycache__/TransformerDecoder.cpython-39.pyc
+notebooks/ImageCaptioning_vit_gpt2 - All Captions.ipynb
+notebooks/ImageCaptioning_LSTM_WithoutAttention - All Captions.ipynb
+notebooks/ImageCaptioning_LSTM_WithoutAttention - All Captions.ipynb

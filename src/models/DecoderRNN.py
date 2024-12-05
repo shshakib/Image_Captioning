@@ -32,7 +32,6 @@ class DecoderRNN(nn.Module):
         
     
     def forward(self, features, captions):
-
         embeddings = self.embedding(captions)  #[batch_size, max_caption_length, emb_size]
         
         h = self.init_h_layer(torch.mean(features, dim = 1))
@@ -87,10 +86,6 @@ class DecoderRNN(nn.Module):
                 context = features.mean(dim=1)
 
             lstm_input = torch.cat((embeds[:, 0], context), dim=1)
-            #print(f"Embedding size: {embeds[:, 0].shape}")  #[1, emb_size]
-            #print(f"Context size: {context.shape}")         #[1, enc_hidden_size]
-            #print(f"LSTM input size: {lstm_input.shape}")  #[1, emb_size + enc_hidden_size]
-
             h, c = self.lstm_cell(lstm_input, (h, c))
 
             output = self.fc_out(self.dropout(h))
