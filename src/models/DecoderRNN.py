@@ -6,7 +6,7 @@ class DecoderRNN(nn.Module):
 
     def __init__(self, emb_size, vocab_size, attn_size, 
                        enc_hidden_size, dec_hidden_size, 
-                       drop_prob = 0.3, device='cpu', use_attention=True):
+                       drop_prob, device, use_attention=True):
         super().__init__()
         
         self.use_attention = use_attention
@@ -65,7 +65,7 @@ class DecoderRNN(nn.Module):
 
 
 
-    def generate_caption(self, features, max_len=80, vocab=None):
+    def generate_caption(self, features, max_len, vocab=None):
 
         batch_size = features.size(0)
 

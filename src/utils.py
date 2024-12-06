@@ -9,6 +9,7 @@ import os
 import gzip
 import torch
 from evaluate import load
+import pandas as pd
 
 ###############################################################################
 
@@ -215,7 +216,7 @@ def save_checkpoint(model, optimizer, epoch, train_loss, val_loss, bleu_score,
 
 ###############################################################################
 
-def collect_captions(model, data_loader, vocab, vocab_builder, device):
+def collect_captions_first(model, data_loader, vocab, vocab_builder, device, max_sentence_length):
     model.eval()
     raw_captions = []
     generated_captions = []
@@ -227,29 +228,7 @@ def collect_captions(model, data_loader, vocab, vocab_builder, device):
 
             for i in range(val_images.size(0)):
                 features = model.encoder(val_images[i:i+1])
-                generated_caption, _ = model.decoder.generate_caption(features, vocab=vocab)
-
-                cleaned_caption = [word for word in generated_caption if word not in ["<unk>", "<eos>", PAD_TOKEN]]
-                tokenized_reference = [token for token in vocab_builder.spacy_tokenizer(val_raw_captions[i]) if token != PAD_TOKEN]
-                
-                generated_captions.append(cleaned_caption)
-                raw_captions.append(tokenized_reference)
-
-    return raw_captions, generated_captions
-
-def collect_captions_first(model, data_loader, vocab, vocab_builder, device):
-    model.eval()
-    raw_captions = []
-    generated_captions = []
-    PAD_TOKEN = vocab_builder.PAD_TOKEN
-
-    with torch.no_grad():
-        for val_images, val_caption_token_ids, val_raw_captions in data_loader:
-            val_images = val_images.to(device)
-
-            for i in range(val_images.size(0)):
-                features = model.encoder(val_images[i:i+1])
-                generated_caption, _ = model.decoder.generate_caption(features, vocab=vocab)
+                generated_caption, _ = model.decoder.generate_caption(features, vocab=vocab, max_len = max_sentence_length)
 
                 cleaned_caption = [word for word in generated_caption if word not in ["<unk>", "<eos>", PAD_TOKEN]]
                 tokenized_reference = [token for token in vocab_builder.spacy_tokenizer(val_raw_captions[i].split('|')[0]) if token != PAD_TOKEN]
@@ -302,17 +281,20 @@ def train_model(model, train_loader, val_loader, test_loader, criterion,
 
                 model.eval()
                 with torch.no_grad():
-                    img, _, _ = next(iter(train_loader))
+                    img, _, original_captions = next(iter(train_loader))
                     features = model.encoder(img[0:1].to(device))
 
                     if model.decoder_type == "lstm":
-                        caps, attn_weights = model.decoder.generate_caption(features, vocab=vocab)
+                        caps, attn_weights = model.decoder.generate_caption(features, vocab=vocab, max_len=max_sentence_length)
                     elif model.decoder_type == "transformer":
                         caps, attn_weights = model.decoder.generate_caption(features, max_len=max_sentence_length, vocab=vocab)
 
 
-                    caption = ' '.join(caps)
-                    display_image(img[0], caption=caption, denormalize=True, mean=Transform_mean, std=Transform_std)
+                    generated_caption = ' '.join(caps)
+                    print()
+                    print("Original Caption:", original_captions[0])
+                    print("Generated Caption:", generated_caption)
+                    display_image(img[0], caption=generated_caption, denormalize=True, mean=Transform_mean, std=Transform_std)
 
                 model.train()
 
@@ -327,7 +309,7 @@ def train_model(model, train_loader, val_loader, test_loader, criterion,
 
         
         #BLEU
-        raw_captions, generated_captions = collect_captions_first(model, val_loader, vocab, vocab_builder, device)
+        raw_captions, generated_captions = collect_captions_first(model, val_loader, vocab, vocab_builder, device, max_sentence_length)
 
         if model.decoder_type == "lstm":
             avg_bleu_score = calculate_bleu_score(raw_captions, generated_captions)
@@ -359,7 +341,7 @@ def train_model(model, train_loader, val_loader, test_loader, criterion,
         )
         
         #Change learning rate
-        scheduler.step(avg_val_loss)
+        #scheduler.step(avg_val_loss)
 
         #Early stopping
         if early_stopping(avg_val_loss):
@@ -387,7 +369,7 @@ def train_model(model, train_loader, val_loader, test_loader, criterion,
     print("Evaluating on the test set...")
     final_test_loss = calculate_loss(model, test_loader, criterion, model.decoder.vocab_size, device)
     
-    raw_captions, generated_captions = collect_captions_first(model, test_loader, vocab, vocab_builder, device)
+    raw_captions, generated_captions = collect_captions_first(model, test_loader, vocab, vocab_builder, device, max_sentence_length)
     final_test_bleu = calculate_bleu_score(raw_captions, generated_captions)
     final_test_rouge = calculate_rouge(raw_captions, generated_captions)
 
@@ -415,6 +397,19 @@ def train_model(model, train_loader, val_loader, test_loader, criterion,
 
 
     return None
+
+###############################################################################
+
+def save_dataset_as_csv(dataset, csv_file_path):
+    data = []
+    for image_path, caption in zip(dataset.image_paths, dataset.captions):
+        image_name = os.path.basename(image_path)
+        data.append({"image_name": image_name, "caption": caption})
+    
+    df = pd.DataFrame(data)
+    df.to_csv(csv_file_path, index=False)
+    print(f"Dataset saved to {csv_file_path}")
+
 
 ###############################################################################
 

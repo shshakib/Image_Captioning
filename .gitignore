@@ -35,3 +35,32 @@ src/models/__pycache__/TransformerDecoder.cpython-39.pyc
 notebooks/ImageCaptioning_vit_gpt2 - All Captions.ipynb
 notebooks/ImageCaptioning_LSTM_WithoutAttention - All Captions.ipynb
 notebooks/ImageCaptioning_LSTM_WithoutAttention - All Captions.ipynb
+saved_model/LSTM_with_Attention_resnet50_None_epoch_1.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_2.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_3.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_4.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_5.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_6.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_7.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_8.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_9.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_10.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_11.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_12.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_13.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_14.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_15.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_16.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_17.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_18.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_19.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_epoch_20.pth.gz
+saved_model/LSTM_with_Attention_resnet50_None_training_metrics_plot.png
+saved_model/vocab.pth
+src/__pycache__/batch_caption_collator.cpython-39.pyc
+src/__pycache__/image_caption_dataset.cpython-39.pyc
+src/__pycache__/utils.cpython-39.pyc
+val_dataset.csv
+train_dataset.csv
+test_dataset.csv
+saved_model/vocab.pth

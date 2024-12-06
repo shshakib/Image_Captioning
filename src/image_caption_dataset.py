@@ -8,20 +8,14 @@ from torchvision import transforms
 class ImageCaptionDataset(Dataset):
     def __init__(self, image_paths, captions, vocabulary_builder, transform=None):
 
-        self.image_path_dict = {os.path.basename(path): path for path in image_paths}
+        if len(image_paths) != len(captions):
+            raise ValueError("Number of image paths and captions must match.")
+        
+        self.image_paths = image_paths
+        self.captions = captions
         self.vocabulary_builder = vocabulary_builder
         self.transform = transform
 
-        
-        df = pd.read_csv(captions, sep='|')
-        df.columns = df.columns.str.strip()
-
-        df = df.dropna(subset=['comment'])
-
-        df = df.groupby('image_name').first().reset_index()
-        #print(df.head(5))
-        self.captions = df['comment'].tolist()
-        self.image_names = df['image_name'].tolist()
 
 
     def __len__(self):
@@ -45,24 +39,17 @@ class ImageCaptionDataset(Dataset):
 
     def __getitem__(self, idx):
 
-        image_name = self.image_names[idx].strip()
-        image_path = self.image_path_dict[image_name]
+        image_path = self.image_paths[idx]
         
         image = Image.open(image_path).convert("RGB")
         if self.transform:
             image = self.transform(image)
 
         caption = self.captions[idx]
+        if caption is None or not isinstance(caption, str):
+            raise ValueError(f"Invalid caption at index {idx}: {caption}")
 
-        if caption is None:
-            raise ValueError("Caption is None for index {}".format(idx))
-
-        if not isinstance(caption, str):
-            print("Invalid caption at index {}: value = {}, type = {}".format(idx, caption, type(caption)))
-            raise ValueError("Caption is not a string for index {}".format(idx))
-        
         caption_token_ids = self.caption_to_token_ids(caption)
-
         caption_token_ids = torch.tensor(caption_token_ids, dtype=torch.long)
-        
+
         return image, caption_token_ids, caption
